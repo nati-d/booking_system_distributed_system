@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  user_service:
+    build:
+      context: ./user_service  # Path to the user_service directory
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./user_service:/app  # Mount the user_service directory inside the container
+    environment:
+      - DEBUG=${DEBUG}
+      - SECRET_KEY=${SECRET_KEY}
+      - ALLOWED_HOSTS=${ALLOWED_HOSTS}
+      - DB_NAME=${DB_NAME}
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_HOST=${DB_HOST}
+      - DB_PORT=${DB_PORT}
+    command: ["python", "manage.py", "runserver", "0.0.0.0:8000"]  # Command to run the server
+    depends_on:
+      - db
+
+  db:
+    image: postgres:15
+    environment:
+      - POSTGRES_DB=${DB_NAME}
+      - POSTGRES_USER=${DB_USER}
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+volumes:
+  postgres_data:  # Named volume for the database
