@@ -149,6 +149,24 @@ REST_FRAMEWORK = {
     ],
 }
 
+# Swagger settings
+SWAGGER_SETTINGS = {
+    'SECURITY_DEFINITIONS': {
+        'Bearer': {
+            'type': 'apiKey',
+            'name': 'Authorization',
+            'in': 'header'
+        }
+    },
+    'SECURITY': [{'Bearer': []}],
+    'USE_SESSION_AUTH': False,
+    'JSON_EDITOR': True,
+    'SUPPORTED_SUBMIT_METHODS': ['get', 'post', 'put', 'delete', 'patch'],
+    'OPERATIONS_SORTER': 'method',
+    'DEFAULT_MODEL_RENDERING': 'example',
+    'DISPLAY_OPERATION_ID': False,
+}
+
 # JWT settings
 from datetime import timedelta
 SIMPLE_JWT = {
