@@ -5,7 +5,7 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import get_user_model
-from .serializers import UserSerializer, LoginSerializer
+from .serializers import UserSerializer, LoginSerializer, UserProfileSerializer, PublicUserSerializer
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 
@@ -207,6 +207,130 @@ class UserDetailView(generics.RetrieveUpdateAPIView):
     )
     def patch(self, request, *args, **kwargs):
         return self.put(request, *args, **kwargs)
+
+class ProfileView(generics.RetrieveUpdateAPIView):
+    """
+    Retrieve or update user profile
+    """
+    serializer_class = UserProfileSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_object(self):
+        return self.request.user
+
+    @swagger_auto_schema(
+        operation_description="Get current user's profile",
+        responses={
+            200: openapi.Response(
+                description="Profile retrieved successfully",
+                examples={
+                    "application/json": {
+                        "id": 1,
+                        "email": "john@example.com",
+                        "username": "john_doe",
+                        "first_name": "John",
+                        "last_name": "Doe",
+                        "is_event_organizer": False
+                    }
+                }
+            ),
+            401: openapi.Response(
+                description="Authentication failed",
+                examples={
+                    "application/json": {
+                        "detail": "Authentication credentials were not provided."
+                    }
+                }
+            )
+        }
+    )
+    def get(self, request, *args, **kwargs):
+        return super().get(request, *args, **kwargs)
+
+    @swagger_auto_schema(
+        operation_description="""
+        Update user profile. You can update:
+        - Username
+        - First name
+        - Last name
+        - Password (requires current_password, new_password, and confirm_new_password)
+        
+        Note: Email cannot be changed directly for security reasons.
+        """,
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                'username': openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    description='New username'
+                ),
+                'first_name': openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    description='New first name'
+                ),
+                'last_name': openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    description='New last name'
+                ),
+                'current_password': openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    description='Current password (required for password change)'
+                ),
+                'new_password': openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    description='New password (must meet password requirements)'
+                ),
+                'confirm_new_password': openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    description='Confirm new password'
+                )
+            }
+        ),
+        responses={
+            200: openapi.Response(
+                description="Profile updated successfully",
+                examples={
+                    "application/json": {
+                        "id": 1,
+                        "email": "john@example.com",
+                        "username": "john_doe",
+                        "first_name": "John",
+                        "last_name": "Doe",
+                        "is_event_organizer": False
+                    }
+                }
+            ),
+            400: openapi.Response(
+                description="Validation error",
+                examples={
+                    "application/json": {
+                        "username": [
+                            "This username is already taken."
+                        ],
+                        "current_password": [
+                            "Current password is incorrect"
+                        ],
+                        "new_password": [
+                            "Password must be at least 8 characters long.",
+                            "Password must contain at least one uppercase letter.",
+                            "Password must contain at least one number.",
+                            "Password must contain at least one special character."
+                        ],
+                        "confirm_new_password": [
+                            "New passwords don't match"
+                        ]
+                    }
+                }
+            )
+        }
+    )
+    def put(self, request, *args, **kwargs):
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        self.perform_update(serializer)
+        
+        return Response(serializer.data)
 
 class RegisterView(generics.CreateAPIView):
     """
@@ -494,3 +618,101 @@ class CustomTokenObtainPairView(TokenObtainPairView):
             }
         
         return response
+
+class UserSearchView(generics.GenericAPIView):
+    """
+    Search for users by email
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class = PublicUserSerializer
+
+    @swagger_auto_schema(
+        operation_description="Search for a user by email",
+        manual_parameters=[
+            openapi.Parameter(
+                'email',
+                openapi.IN_QUERY,
+                description="Email to search for",
+                type=openapi.TYPE_STRING,
+                format=openapi.FORMAT_EMAIL,
+                required=True
+            )
+        ],
+        responses={
+            200: openapi.Response(
+                description="User found",
+                examples={
+                    "application/json": {
+                        "id": 1,
+                        "email": "john@example.com",
+                        "username": "john_doe",
+                        "first_name": "John",
+                        "last_name": "Doe",
+                        "is_event_organizer": False
+                    }
+                }
+            ),
+            404: openapi.Response(
+                description="User not found",
+                examples={
+                    "application/json": {
+                        "detail": "No user found with this email"
+                    }
+                }
+            )
+        }
+    )
+    def get(self, request):
+        email = request.query_params.get('email')
+        if not email:
+            return Response(
+                {"detail": "Email parameter is required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            user = User.objects.get(email=email)
+            serializer = self.get_serializer(user)
+            return Response(serializer.data)
+        except User.DoesNotExist:
+            return Response(
+                {"detail": "No user found with this email"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+class UserDetailByIdView(generics.RetrieveAPIView):
+    """
+    Retrieve user details by ID
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class = PublicUserSerializer
+    queryset = User.objects.all()
+
+    @swagger_auto_schema(
+        operation_description="Get user details by ID",
+        responses={
+            200: openapi.Response(
+                description="User details retrieved successfully",
+                examples={
+                    "application/json": {
+                        "id": 1,
+                        "email": "john@example.com",
+                        "username": "john_doe",
+                        "first_name": "John",
+                        "last_name": "Doe",
+                        "is_event_organizer": False
+                    }
+                }
+            ),
+            404: openapi.Response(
+                description="User not found",
+                examples={
+                    "application/json": {
+                        "detail": "Not found."
+                    }
+                }
+            )
+        }
+    )
+    def get(self, request, *args, **kwargs):
+        return super().get(request, *args, **kwargs)

@@ -9,7 +9,10 @@ urlpatterns = [
     path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('logout/', views.LogoutView.as_view(), name='logout'),
     
-    # User management endpoints
-    path('me/', views.UserDetailView.as_view(), kwargs={'pk': 'me'}, name='user-me'),
-    path('<int:pk>/', views.UserDetailView.as_view(), name='user-detail'),
+    # Profile endpoints
+    path('profile/', views.ProfileView.as_view(), name='profile'),
+    
+    # User search and details endpoints
+    path('search/', views.UserSearchView.as_view(), name='user-search'),
+    path('by-id/<int:pk>/', views.UserDetailByIdView.as_view(), name='user-detail-by-id'),
 ]

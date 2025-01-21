@@ -25,7 +25,23 @@ schema_view = get_schema_view(
     openapi.Info(
         title="Booking System API",
         default_version='v1',
-        description="API documentation for the Booking System",
+        description="""
+# Authentication Guide
+1. First, register a new account using the `/api/users/register/` endpoint
+2. Login using the `/api/users/login/` endpoint
+3. Copy the `access` token from the response
+4. Click the 'Authorize' button at the top of this page
+5. In the authorization popup, enter your token like this:
+   ```
+   Bearer your_access_token_here
+   ```
+6. Click 'Authorize' and close the popup
+7. Now you can use all authenticated endpoints
+
+Note: The access token expires after some time. If you get a 401 error, you'll need to:
+1. Use the `/api/users/token/refresh/` endpoint to get a new access token, or
+2. Login again to get new tokens
+        """,
         terms_of_service="https://www.google.com/policies/terms/",
         contact=openapi.Contact(email="contact@bookingsystem.local"),
         license=openapi.License(name="BSD License"),

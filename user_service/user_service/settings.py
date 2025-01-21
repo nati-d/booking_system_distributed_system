@@ -162,6 +162,9 @@ SWAGGER_SETTINGS = {
             'in': 'header'
         }
     },
+    'SECURITY_REQUIREMENTS': [
+        {'Bearer': []}
+    ],
     'USE_SESSION_AUTH': False,
     'JSON_EDITOR': True,
     'SUPPORTED_SUBMIT_METHODS': ['get', 'post', 'put', 'delete', 'patch'],
