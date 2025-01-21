@@ -3,11 +3,12 @@ version: '3.8'
 services:
   user_service:
     build:
-      context: ./user_service  # Path to the user_service directory
+      context: ./user_service
+    container_name: booking_system_user_service  # Assign a specific name to the container
     ports:
       - "8000:8000"
     volumes:
-      - ./user_service:/app  # Mount the user_service directory inside the container
+      - ./user_service:/app
     environment:
       - DEBUG=${DEBUG}
       - SECRET_KEY=${SECRET_KEY}
@@ -17,12 +18,13 @@ services:
       - DB_PASSWORD=${DB_PASSWORD}
       - DB_HOST=${DB_HOST}
       - DB_PORT=${DB_PORT}
-    command: ["python", "manage.py", "runserver", "0.0.0.0:8000"]  # Command to run the server
+    command: ["python", "manage.py", "runserver", "0.0.0.0:8000"]
     depends_on:
       - db
 
   db:
     image: postgres:15
+    container_name: booking_system_db
     environment:
       - POSTGRES_DB=${DB_NAME}
       - POSTGRES_USER=${DB_USER}
@@ -33,4 +35,4 @@ services:
       - "5432:5432"
 
 volumes:
-  postgres_data:  # Named volume for the database
+  postgres_data:

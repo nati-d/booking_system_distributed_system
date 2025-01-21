@@ -1,3 +1,4 @@
+# Python
 __pycache__/
 *.py[cod]
 *$py.class
@@ -18,14 +19,37 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
-.env
-.venv
+
+# Virtual Environment
 venv/
+env/
 ENV/
+.env
+
+# IDE
 .idea/
 .vscode/
-*.log
+*.swp
+*.swo
+.DS_Store
+
+# Docker
+.docker/
+
+# Git
 .git
 .gitignore
-README.md
-tests/
+
+# Local development settings
+local_settings.py
+
+# Database
+*.sqlite3
+*.db
+
+# Logs
+*.log
+
+# Media and static files (should be served from S3 or similar in production)
+media/
+static/

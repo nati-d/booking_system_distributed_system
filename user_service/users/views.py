@@ -99,22 +99,60 @@ class CustomTokenObtainPairView(TokenObtainPairView):
     """
     permission_classes = [permissions.AllowAny]
 
-    @swagger_auto_schema(
-        operation_description="Get JWT token pair",
-        responses={
-            200: openapi.Response(
-                description="Token pair obtained successfully",
-                examples={
-                    "application/json": {
-                        "access": "eyJ0...",
-                        "refresh": "eyJ0...",
-                        "usage": "Include the access token in the Authorization header"
-                    }
-                }
-            )
-        }
-    )
     def post(self, request, *args, **kwargs):
         response = super().post(request, *args, **kwargs)
-        response.data['usage'] = 'Include the access token in the Authorization header like this: Bearer <access_token>'
+        
+        if response.status_code == 200:
+            # Get the tokens from the response
+            access_token = response.data.get('access')
+            refresh_token = response.data.get('refresh')
+            
+            # Set HTTP-only cookie for refresh token
+            response.set_cookie(
+                'refresh_token',
+                refresh_token,
+                httponly=True,
+                secure=True,  # Use only with HTTPS
+                samesite='Lax',
+                max_age=24 * 60 * 60  # 1 day
+            )
+            
+            # Return a structured response
+            response.data = {
+                'access_token': access_token,
+                'user': {
+                    'id': request.user.id,
+                    'username': request.user.username,
+                    'email': request.user.email
+                },
+                'message': 'Login successful',
+                'usage': 'Include the access token in the Authorization header like this: Bearer <access_token>'
+            }
+        
         return response
+
+class LogoutView(APIView):
+    """
+    Logout view to clear the refresh token cookie
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        try:
+            # Clear the refresh token cookie
+            response = Response({'message': 'Successfully logged out'})
+            response.delete_cookie('refresh_token')
+            
+            # Blacklist the refresh token if you're using token blacklist feature
+            try:
+                refresh_token = request.COOKIES.get('refresh_token')
+                if refresh_token:
+                    token = RefreshToken(refresh_token)
+                    token.blacklist()
+            except Exception:
+                pass
+                
+            return response
+            
+        except Exception as e:
+            return Response({'error': 'Something went wrong'}, status=status.HTTP_400_BAD_REQUEST)
