@@ -1,7 +1,8 @@
 from rest_framework import serializers
-from django.contrib.auth import get_user_model
+from django.contrib.auth import get_user_model, authenticate
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
+from rest_framework_simplejwt.tokens import RefreshToken
 import re
 
 User = get_user_model()
@@ -78,3 +79,38 @@ class UserSerializer(serializers.ModelSerializer):
         
         instance.save()
         return instance
+
+class LoginSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+    password = serializers.CharField(max_length=128, write_only=True)
+    access = serializers.CharField(read_only=True)
+    refresh = serializers.CharField(read_only=True)
+
+    def validate(self, data):
+        email = data.get('email', None)
+        password = data.get('password', None)
+
+        if email is None:
+            raise serializers.ValidationError('An email address is required to login.')
+
+        if password is None:
+            raise serializers.ValidationError('A password is required to login.')
+
+        try:
+            user = User.objects.get(email=email)
+        except User.DoesNotExist:
+            raise serializers.ValidationError('No account found with this email address.')
+
+        if not user.check_password(password):
+            raise serializers.ValidationError('Invalid password.')
+
+        if not user.is_active:
+            raise serializers.ValidationError('This user has been deactivated.')
+
+        refresh = RefreshToken.for_user(user)
+
+        return {
+            'email': user.email,
+            'access': str(refresh.access_token),
+            'refresh': str(refresh)
+        }

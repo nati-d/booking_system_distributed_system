@@ -5,7 +5,7 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import get_user_model
-from .serializers import UserSerializer
+from .serializers import UserSerializer, LoginSerializer
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 
@@ -336,6 +336,126 @@ class RegisterView(generics.CreateAPIView):
         
         return response
 
+class LoginView(generics.GenericAPIView):
+    """
+    Login user with email and password, returns JWT tokens
+    """
+    permission_classes = [permissions.AllowAny]
+    serializer_class = LoginSerializer
+
+    @swagger_auto_schema(
+        operation_description="""
+        Login with email and password to receive JWT tokens.
+        The access token should be included in the Authorization header for protected endpoints.
+        The refresh token is stored in an HTTP-only cookie.
+        """,
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            required=['email', 'password'],
+            properties={
+                'email': openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    format=openapi.FORMAT_EMAIL,
+                    description='Email address',
+                    example='john@example.com'
+                ),
+                'password': openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    description='Password',
+                    example='SecurePass123!'
+                )
+            }
+        ),
+        responses={
+            200: openapi.Response(
+                description="Login successful",
+                examples={
+                    "application/json": {
+                        "email": "john@example.com",
+                        "access": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...",
+                        "message": "Login successful"
+                    }
+                }
+            ),
+            400: openapi.Response(
+                description="Bad request",
+                examples={
+                    "application/json": {
+                        "non_field_errors": [
+                            "No account found with this email address.",
+                            "Invalid password."
+                        ]
+                    }
+                }
+            )
+        }
+    )
+    def post(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        
+        # Get the validated data
+        validated_data = serializer.validated_data
+        
+        response_data = {
+            'email': validated_data['email'],
+            'access': validated_data['access'],
+            'message': 'Login successful'
+        }
+        
+        # Create the response
+        response = Response(response_data)
+        
+        # Set the refresh token in an HTTP-only cookie
+        response.set_cookie(
+            'refresh_token',
+            validated_data['refresh'],
+            httponly=True,
+            secure=True,
+            samesite='Lax',
+            max_age=24 * 60 * 60  # 1 day
+        )
+        
+        return response
+
+class LogoutView(generics.GenericAPIView):
+    """
+    Logout user and blacklist the refresh token
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    @swagger_auto_schema(
+        operation_description="Logout user and invalidate refresh token",
+        responses={
+            200: openapi.Response(
+                description="Logout successful",
+                examples={
+                    "application/json": {
+                        "message": "Successfully logged out"
+                    }
+                }
+            )
+        }
+    )
+    def post(self, request):
+        try:
+            # Get the refresh token from cookie
+            refresh_token = request.COOKIES.get('refresh_token')
+            
+            if refresh_token:
+                # Blacklist the refresh token
+                token = RefreshToken(refresh_token)
+                token.blacklist()
+            
+            # Create response and delete the refresh token cookie
+            response = Response({'message': 'Successfully logged out'})
+            response.delete_cookie('refresh_token')
+            
+            return response
+            
+        except Exception as e:
+            return Response({'error': str(e)}, status=400)
+
 class CustomTokenObtainPairView(TokenObtainPairView):
     """
     Takes a set of user credentials and returns an access and refresh JSON web
@@ -374,29 +494,3 @@ class CustomTokenObtainPairView(TokenObtainPairView):
             }
         
         return response
-
-class LogoutView(APIView):
-    """
-    Logout view to clear the refresh token cookie
-    """
-    permission_classes = [permissions.IsAuthenticated]
-
-    def post(self, request):
-        try:
-            # Clear the refresh token cookie
-            response = Response({'message': 'Successfully logged out'})
-            response.delete_cookie('refresh_token')
-            
-            # Blacklist the refresh token if you're using token blacklist feature
-            try:
-                refresh_token = request.COOKIES.get('refresh_token')
-                if refresh_token:
-                    token = RefreshToken(refresh_token)
-                    token.blacklist()
-            except Exception:
-                pass
-                
-            return response
-            
-        except Exception as e:
-            return Response({'error': 'Something went wrong'}, status=status.HTTP_400_BAD_REQUEST)
