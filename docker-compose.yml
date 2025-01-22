@@ -4,7 +4,7 @@ services:
   user_service:
     build:
       context: ./user_service
-    container_name: booking_system_user_service  # Assign a specific name to the container
+    container_name: booking_system_user_service
     ports:
       - "8000:8000"
     volumes:
@@ -16,23 +16,69 @@ services:
       - DB_NAME=${DB_NAME}
       - DB_USER=${DB_USER}
       - DB_PASSWORD=${DB_PASSWORD}
-      - DB_HOST=${DB_HOST}
+      - DB_HOST=user_db
       - DB_PORT=${DB_PORT}
     command: ["python", "manage.py", "runserver", "0.0.0.0:8000"]
     depends_on:
-      - db
+      - user_db
+    networks:
+      - booking_network
 
-  db:
+  payment_service:
+    build:
+      context: ./payment_service
+    container_name: booking_system_payment_service
+    ports:
+      - "8001:8000"
+    volumes:
+      - ./payment_service:/app
+    environment:
+      - DEBUG=${DEBUG}
+      - SECRET_KEY=${SECRET_KEY}
+      - ALLOWED_HOSTS=${ALLOWED_HOSTS}
+      - DB_NAME=${PAYMENT_DB_NAME}
+      - DB_USER=${PAYMENT_DB_USER}
+      - DB_PASSWORD=${PAYMENT_DB_PASSWORD}
+      - DB_HOST=payment_db
+      - DB_PORT=${DB_PORT}
+    command: ["python", "manage.py", "runserver", "0.0.0.0:8001"]
+    depends_on:
+      - payment_db
+    networks:
+      - booking_network
+
+  user_db:
     image: postgres:15
-    container_name: booking_system_db
+    container_name: booking_system_user_db
     environment:
       - POSTGRES_DB=${DB_NAME}
       - POSTGRES_USER=${DB_USER}
       - POSTGRES_PASSWORD=${DB_PASSWORD}
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - user_db_data:/var/lib/postgresql/data
     ports:
       - "5432:5432"
+    networks:
+      - booking_network
+
+  payment_db:
+    image: postgres:15
+    container_name: booking_system_payment_db
+    environment:
+      - POSTGRES_DB=${PAYMENT_DB_NAME}
+      - POSTGRES_USER=${PAYMENT_DB_USER}
+      - POSTGRES_PASSWORD=${PAYMENT_DB_PASSWORD}
+    volumes:
+      - payment_db_data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+    networks:
+      - booking_network
+
+networks:
+  booking_network:
+    driver: bridge
 
 volumes:
-  postgres_data:
+  user_db_data:
+  payment_db_data:
