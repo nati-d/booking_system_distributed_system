@@ -4,6 +4,19 @@ This repository contains the implementation of a distributed booking service sys
 
 ---
 
+## Architecture
+![DSARCH](https://raw.githubusercontent.com/nati-d/booking_system_distributed_system/main/DSARCH.jpg)
+
+
+# Microservices Documentation
+
+| **Microservice** | **Responsibility**                                      | **API**                                                   | **Database Entities**                          | **Key Feature**                                            |
+|-------------------|-----------------------------------------------------------|------------------------------------------------------------|---------------------------------------------------------|------------------------------------------------------------|
+| **User Service**: 8000 | User registration and authentication, Profile management, Manage user roles | POST /users/register, POST /users/login, GET /users/{id}, PUT /users/{id} | id (PK), name, email (unique), passwordHash, role, createdAt, updatedAt | Handle user registration and authentication, Manage user data securely, Provide API access tokens for secure communication |
+| **Booking Service**: 8001 | Create and manage bookings, Check availability, Handle cancellations and modifications | POST /bookings, GET /bookings/{id}, PUT /bookings/{id}, DELETE /bookings/{id}, GET /availability | id (PK), userId (FK), resourceId, startTime, endTime, status, createdAt, updatedAt | Manage booking lifecycle (create, update, cancel), Maintain resource availability, Communicate with the user and payment services for confirmation |
+| **Notification Service** | Process notifications                                    | POST /notification                                         | id (PK), notification                                  | Handle and send notifications                                  |
+
+
 ## Features
 
 ### Event Management
