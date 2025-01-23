@@ -34,7 +34,7 @@ class IsAuthenticatedWithToken(BasePermission):
         :return: Tuple (is_valid: bool, user_data: dict)
         """
         return True,None
-        user_service_url = "http://127.0.0.1:8001"  # URL of the user service
+        user_service_url = "http://booking_system_user_service:8001"  # URL of the user service
         response = requests.post(user_service_url, json={"token": token})
 
         if response.status_code == 200:

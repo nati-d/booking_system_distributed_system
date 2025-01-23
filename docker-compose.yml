@@ -55,8 +55,8 @@ services:
     depends_on:
       - rabbitmq
     environment:
-      RABBITMQ_HOST: rabbitmq
+      - RABBITMQ_HOST=rabbitmq
+      - DJANGO_SETTINGS_MODULE=booking_service.settings
 
 volumes:
   postgres_data:
-

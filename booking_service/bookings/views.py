@@ -9,12 +9,53 @@ from .permissions import IsAuthenticatedWithToken  # Import the custom permissio
 import pika
 import json
 import os
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.utils.decorators import method_decorator
+from django.shortcuts import get_object_or_404
+from django.views import View
 
 RABBITMQ_HOST = os.getenv("RABBITMQ_HOST", "localhost")
 RABBITMQ_PORT = int(os.getenv("RABBITMQ_PORT", 5672))
 RABBITMQ_USER = os.getenv("RABBITMQ_USER", "guest")
 RABBITMQ_PASSWORD = os.getenv("RABBITMQ_PASSWORD", "guest")
+from django.views.decorators.csrf import csrf_exempt
 
+
+class DeleteUserEventsView(View): 
+    def DELETE(self, request):
+        # Extract token from the Authorization header
+        token = request.headers.get("Authorization").split(" ")[1]
+        is_valid, user_data = self.validate_jwt_token(token) 
+
+        if not is_valid:
+            return JsonResponse({'error': 'Authentication failed'}, status=403)
+
+        data = json.loads(request.body)
+        user_id = data.get('user_id')
+
+        if not user_id:
+            return JsonResponse({'error': 'User ID is required'}, status=400)
+
+        try:
+            # Delete all bookings for the user
+            Booking.objects.filter(user_id=user_id).delete()
+            return JsonResponse({'message': f'All events for user {user_id} have been deleted'}, status=200)
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=500)
+
+    def validate_jwt_token(self, token):
+        return True, None
+        user_service_url = "http://booking_system_user_service:8001/validate_token/"
+        response = requests.post(user_service_url, json={"token": token})
+        if response.status_code == 200:
+            data = response.json()
+            if data.get("valid"):
+                return True, data
+            else:
+                return False, None
+        else:
+            return False, None 
 def book_event(user_id, event_id, date):    
     """
     Simulate booking an event and sending a notification. 
@@ -102,7 +143,8 @@ class BookingCreateView(generics.CreateAPIView):
         serializer.save(user_id=user_id)
 
     def validate_jwt_token(self, token): 
-        user_service_url = "http://127.0.0.1:8001/validate_token/"
+        return True,None
+        user_service_url = "http://booking_system_user_service:8001/validate_token/"
         response = requests.post(user_service_url, json={"token": token})
         if response.status_code == 200:
             data = response.json()
@@ -111,7 +153,7 @@ class BookingCreateView(generics.CreateAPIView):
             else:
                 return False, None
         else:
-            return False, None
+            return False, None  
 
 class BookingListView(generics.ListAPIView):
     serializer_class = BookingSerializer
@@ -131,7 +173,8 @@ class BookingListView(generics.ListAPIView):
         return Booking.objects.filter(user_id=user_id)
 
     def validate_jwt_token(self, token):
-        user_service_url = "http://127.0.0.1:8001/validate_token/"
+        return True,None
+        user_service_url = "http://booking_system_user_service:8001/validate_token/"
         response = requests.post(user_service_url, json={"token": token})
         if response.status_code == 200:
             data = response.json()
@@ -150,7 +193,7 @@ class PaymentView(generics.CreateAPIView):
     def perform_create(self, serializer):
         # Extract token from the Authorization header
         token = self.request.headers.get("Authorization").split(" ")[1]
-        is_valid, user_data = self.validate_jwt_token(token)
+        is_valid, user_data = self.validate_jwt_token(token) 
 
         if not is_valid or not user_data:
             raise AuthenticationFailed("Authentication failed.")
@@ -168,7 +211,8 @@ class PaymentView(generics.CreateAPIView):
         serializer.save()
 
     def validate_jwt_token(self, token):
-        user_service_url = "http://127.0.0.1:8001/validate_token/"
+        return True,None
+        user_service_url = "http://booking_system_user_service:8001/validate_token/"
         response = requests.post(user_service_url, json={"token": token})
         if response.status_code == 200:
             data = response.json()

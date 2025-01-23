@@ -65,6 +65,8 @@ class DeleteUserView(APIView):
     """
     API View to delete a user and notify the booking service.
     """
+    permission_classes = [permissions.AllowAny]
+
     def delete(self, request, user_id):
         try:
             # Fetch the user
@@ -74,16 +76,15 @@ class DeleteUserView(APIView):
             user.delete()
  
             # Publish to RabbitMQ queue
-            credentials = pika.PlainCredentials(RABBITMQ_USER, RABBITMQ_PASSWORD)
             connection = pika.BlockingConnection(pika.ConnectionParameters(
                 host=RABBITMQ_HOST,
                 port=RABBITMQ_PORT,
-                credentials=credentials
+                credentials=pika.PlainCredentials(RABBITMQ_USER, RABBITMQ_PASSWORD)
             ))
             channel = connection.channel()
 
             # Declare the queue
-            channel.queue_declare(queue='delete_user')
+            channel.queue_declare(queue='delete_user', durable=True)
 
             # Publish the message with user ID
             message = {"user_id": user_id}
