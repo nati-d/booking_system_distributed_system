@@ -1,32 +1,115 @@
+import json
+import os
 from django.shortcuts import render
 from rest_framework import generics, permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from rest_framework_simplejwt.views import TokenObtainPairView
+from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework_simplejwt.tokens import AccessToken
+
 from django.contrib.auth import get_user_model
 from .serializers import UserSerializer, LoginSerializer, UserProfileSerializer, PublicUserSerializer
-from drf_yasg.utils import swagger_auto_schema
-from drf_yasg import openapi
+import pika 
+User = get_user_model() 
 
-User = get_user_model()
 
-class UserListView(generics.ListCreateAPIView):
-    """r
-    get:
-    Return a list of all users (admin only).
-
-    post:
-    Create a new user (admin only).
+RABBITMQ_HOST = os.getenv("RABBITMQ_HOST", "localhost")
+RABBITMQ_PORT = int(os.getenv("RABBITMQ_PORT", 5672))
+RABBITMQ_USER = os.getenv("RABBITMQ_USER", "guest")
+RABBITMQ_PASSWORD = os.getenv("RABBITMQ_PASSWORD", "guest")
+class ValidateTokenView(APIView):
     """
+    API View to validate a JWT token and return user data if valid.
+    """
+    # permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        token = request.data.get("token")
+        print(token,11)
+        print(token)
+        if not token:
+            return Response({"error": "Token is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            # Decode the token to validate it
+            access_token = AccessToken(token)
+            
+            # Check if token is valid and not expired
+            user_id = access_token.get("user_id")
+            if not user_id:
+                print(1111)
+                return Response({"error": "Invalid token payload."}, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Optionally check for blacklisted token
+            # if hasattr(access_token, "check_blacklist") and access_token.check_blacklist():
+            #     return Response({"error": "Token has been blacklisted."}, status=status.HTTP_401_UNAUTHORIZED)
+
+            # Retrieve the user from the database
+            user = User.objects.get(id=user_id)
+            
+            user_data = {
+                "id": user.id,
+                "username": user.username,
+                "email": user.email,
+            }
+            return Response({"valid": True, "user": user_data}, status=status.HTTP_200_OK)
+
+        except User.DoesNotExist:
+            return Response({"valid": False, "error": "User not found."}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            # Generic error handling for debugging
+            return Response({"valid": False, "error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+class DeleteUserView(APIView): 
+    """
+    API View to delete a user and notify the booking service.
+    """
+    def delete(self, request, user_id):
+        try:
+            # Fetch the user
+            user = User.objects.get(id=user_id)
+
+            # Delete the user
+            user.delete()
+ 
+            # Publish to RabbitMQ queue
+            credentials = pika.PlainCredentials(RABBITMQ_USER, RABBITMQ_PASSWORD)
+            connection = pika.BlockingConnection(pika.ConnectionParameters(
+                host=RABBITMQ_HOST,
+                port=RABBITMQ_PORT,
+                credentials=credentials
+            ))
+            channel = connection.channel()
+
+            # Declare the queue
+            channel.queue_declare(queue='delete_user')
+
+            # Publish the message with user ID
+            message = {"user_id": user_id}
+            channel.basic_publish(
+                exchange='',
+                routing_key='delete_user',
+                body=json.dumps(message)
+            )
+
+            print(f"[x] Sent delete notification: {message}")
+
+            # Close the connection
+            connection.close()
+
+            return Response({"message": f"User {user_id} deleted successfully."}, status=status.HTTP_200_OK)
+
+        except User.DoesNotExist:
+            return Response({"error": "User not found."}, status=status.HTTP_404_NOT_FOUND)
+        except pika.exceptions.AMQPConnectionError as e:
+            return Response({"error": f"Failed to connect to RabbitMQ: {e}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+class UserListView(generics.ListCreateAPIView): 
     queryset = User.objects.all()
     serializer_class = UserSerializer
     permission_classes = [permissions.IsAdminUser]
 
 class UserDetailView(generics.RetrieveUpdateAPIView):
-    """
-    Retrieve or update user information.
-    """
     serializer_class = UserSerializer
     permission_classes = [permissions.IsAuthenticated]
 
@@ -35,118 +118,9 @@ class UserDetailView(generics.RetrieveUpdateAPIView):
             return self.request.user
         return super().get_object()
 
-    @swagger_auto_schema(
-        operation_description="Get user details",
-        responses={
-            200: openapi.Response(
-                description="User details retrieved successfully",
-                examples={
-                    "application/json": {
-                        "id": 1,
-                        "username": "john_doe",
-                        "email": "john@example.com",
-                        "first_name": "John",
-                        "last_name": "Doe",
-                        "is_event_organizer": False
-                    }
-                }
-            ),
-            401: openapi.Response(
-                description="Authentication failed",
-                examples={
-                    "application/json": {
-                        "detail": "Authentication credentials were not provided."
-                    }
-                }
-            )
-        }
-    )
     def get(self, request, *args, **kwargs):
         return super().get(request, *args, **kwargs)
 
-    @swagger_auto_schema(
-        operation_description="""
-        Update user information. Fields that can be updated:
-        - First name
-        - Last name
-        - Email (must be unique)
-        - Password (must meet strength requirements)
-        """,
-        request_body=openapi.Schema(
-            type=openapi.TYPE_OBJECT,
-            properties={
-                'email': openapi.Schema(
-                    type=openapi.TYPE_STRING,
-                    format=openapi.FORMAT_EMAIL,
-                    description='New email address',
-                    example='new.email@example.com'
-                ),
-                'first_name': openapi.Schema(
-                    type=openapi.TYPE_STRING,
-                    description='New first name',
-                    example='John'
-                ),
-                'last_name': openapi.Schema(
-                    type=openapi.TYPE_STRING,
-                    description='New last name',
-                    example='Doe'
-                ),
-                'password': openapi.Schema(
-                    type=openapi.TYPE_STRING,
-                    description='New password (must meet strength requirements)',
-                    example='NewSecurePass123!'
-                ),
-                'password2': openapi.Schema(
-                    type=openapi.TYPE_STRING,
-                    description='New password confirmation',
-                    example='NewSecurePass123!'
-                )
-            }
-        ),
-        responses={
-            200: openapi.Response(
-                description="User updated successfully",
-                examples={
-                    "application/json": {
-                        "id": 1,
-                        "username": "john_doe",
-                        "email": "new.email@example.com",
-                        "first_name": "John",
-                        "last_name": "Doe",
-                        "is_event_organizer": False,
-                        "message": "User updated successfully"
-                    }
-                }
-            ),
-            400: openapi.Response(
-                description="Bad request",
-                examples={
-                    "application/json": {
-                        "email": [
-                            "This email is already in use."
-                        ],
-                        "password": [
-                            "Password must be at least 8 characters long.",
-                            "Password must contain at least one uppercase letter.",
-                            "Password must contain at least one number.",
-                            "Password must contain at least one special character."
-                        ],
-                        "password2": [
-                            "Password fields didn't match."
-                        ]
-                    }
-                }
-            ),
-            401: openapi.Response(
-                description="Authentication failed",
-                examples={
-                    "application/json": {
-                        "detail": "Authentication credentials were not provided."
-                    }
-                }
-            )
-        }
-    )
     def put(self, request, *args, **kwargs):
         instance = self.get_object()
         serializer = self.get_serializer(instance, data=request.data, partial=True)
@@ -160,170 +134,19 @@ class UserDetailView(generics.RetrieveUpdateAPIView):
         
         return Response(response_data)
 
-    @swagger_auto_schema(
-        operation_description="Partially update user information",
-        request_body=openapi.Schema(
-            type=openapi.TYPE_OBJECT,
-            properties={
-                'email': openapi.Schema(
-                    type=openapi.TYPE_STRING,
-                    format=openapi.FORMAT_EMAIL,
-                    description='New email address'
-                ),
-                'first_name': openapi.Schema(
-                    type=openapi.TYPE_STRING,
-                    description='New first name'
-                ),
-                'last_name': openapi.Schema(
-                    type=openapi.TYPE_STRING,
-                    description='New last name'
-                ),
-                'password': openapi.Schema(
-                    type=openapi.TYPE_STRING,
-                    description='New password'
-                ),
-                'password2': openapi.Schema(
-                    type=openapi.TYPE_STRING,
-                    description='New password confirmation'
-                )
-            }
-        ),
-        responses={
-            200: openapi.Response(
-                description="User partially updated successfully",
-                examples={
-                    "application/json": {
-                        "id": 1,
-                        "username": "john_doe",
-                        "email": "john@example.com",
-                        "first_name": "John",
-                        "last_name": "Doe",
-                        "is_event_organizer": False,
-                        "message": "User updated successfully"
-                    }
-                }
-            )
-        }
-    )
     def patch(self, request, *args, **kwargs):
         return self.put(request, *args, **kwargs)
 
 class ProfileView(generics.RetrieveUpdateAPIView):
-    """
-    Retrieve or update user profile
-    """
     serializer_class = UserProfileSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     def get_object(self):
         return self.request.user
 
-    @swagger_auto_schema(
-        operation_description="Get current user's profile",
-        responses={
-            200: openapi.Response(
-                description="Profile retrieved successfully",
-                examples={
-                    "application/json": {
-                        "id": 1,
-                        "email": "john@example.com",
-                        "username": "john_doe",
-                        "first_name": "John",
-                        "last_name": "Doe",
-                        "is_event_organizer": False
-                    }
-                }
-            ),
-            401: openapi.Response(
-                description="Authentication failed",
-                examples={
-                    "application/json": {
-                        "detail": "Authentication credentials were not provided."
-                    }
-                }
-            )
-        }
-    )
     def get(self, request, *args, **kwargs):
         return super().get(request, *args, **kwargs)
 
-    @swagger_auto_schema(
-        operation_description="""
-        Update user profile. You can update:
-        - Username
-        - First name
-        - Last name
-        - Password (requires current_password, new_password, and confirm_new_password)
-        
-        Note: Email cannot be changed directly for security reasons.
-        """,
-        request_body=openapi.Schema(
-            type=openapi.TYPE_OBJECT,
-            properties={
-                'username': openapi.Schema(
-                    type=openapi.TYPE_STRING,
-                    description='New username'
-                ),
-                'first_name': openapi.Schema(
-                    type=openapi.TYPE_STRING,
-                    description='New first name'
-                ),
-                'last_name': openapi.Schema(
-                    type=openapi.TYPE_STRING,
-                    description='New last name'
-                ),
-                'current_password': openapi.Schema(
-                    type=openapi.TYPE_STRING,
-                    description='Current password (required for password change)'
-                ),
-                'new_password': openapi.Schema(
-                    type=openapi.TYPE_STRING,
-                    description='New password (must meet password requirements)'
-                ),
-                'confirm_new_password': openapi.Schema(
-                    type=openapi.TYPE_STRING,
-                    description='Confirm new password'
-                )
-            }
-        ),
-        responses={
-            200: openapi.Response(
-                description="Profile updated successfully",
-                examples={
-                    "application/json": {
-                        "id": 1,
-                        "email": "john@example.com",
-                        "username": "john_doe",
-                        "first_name": "John",
-                        "last_name": "Doe",
-                        "is_event_organizer": False
-                    }
-                }
-            ),
-            400: openapi.Response(
-                description="Validation error",
-                examples={
-                    "application/json": {
-                        "username": [
-                            "This username is already taken."
-                        ],
-                        "current_password": [
-                            "Current password is incorrect"
-                        ],
-                        "new_password": [
-                            "Password must be at least 8 characters long.",
-                            "Password must contain at least one uppercase letter.",
-                            "Password must contain at least one number.",
-                            "Password must contain at least one special character."
-                        ],
-                        "confirm_new_password": [
-                            "New passwords don't match"
-                        ]
-                    }
-                }
-            )
-        }
-    )
     def put(self, request, *args, **kwargs):
         instance = self.get_object()
         serializer = self.get_serializer(instance, data=request.data, partial=True)
@@ -333,108 +156,10 @@ class ProfileView(generics.RetrieveUpdateAPIView):
         return Response(serializer.data)
 
 class RegisterView(generics.CreateAPIView):
-    """
-    Register a new user with email and password.
-    """
     queryset = User.objects.all()
     serializer_class = UserSerializer
     permission_classes = [permissions.AllowAny]
 
-    @swagger_auto_schema(
-        operation_description="""
-        Register a new user with the following requirements:
-        - Username must be unique
-        - Email must be unique and valid
-        - Password must be at least 8 characters long and contain:
-          * At least one uppercase letter
-          * At least one lowercase letter
-          * At least one number
-          * At least one special character (!@#$%^&*(),.?":{}|<>)
-        - Password confirmation (password2) must match password
-        - First name and last name are required
-        """,
-        request_body=openapi.Schema(
-            type=openapi.TYPE_OBJECT,
-            required=['username', 'email', 'password', 'password2', 'first_name', 'last_name'],
-            properties={
-                'username': openapi.Schema(
-                    type=openapi.TYPE_STRING,
-                    description='Unique username',
-                    example='john_doe'
-                ),
-                'email': openapi.Schema(
-                    type=openapi.TYPE_STRING,
-                    format=openapi.FORMAT_EMAIL,
-                    description='Unique email address',
-                    example='john@example.com'
-                ),
-                'password': openapi.Schema(
-                    type=openapi.TYPE_STRING,
-                    description='Strong password (min 8 chars, must include uppercase, lowercase, number, and special char)',
-                    example='SecurePass123!'
-                ),
-                'password2': openapi.Schema(
-                    type=openapi.TYPE_STRING,
-                    description='Password confirmation',
-                    example='SecurePass123!'
-                ),
-                'first_name': openapi.Schema(
-                    type=openapi.TYPE_STRING,
-                    description='User\'s first name',
-                    example='John'
-                ),
-                'last_name': openapi.Schema(
-                    type=openapi.TYPE_STRING,
-                    description='User\'s last name',
-                    example='Doe'
-                ),
-                'is_event_organizer': openapi.Schema(
-                    type=openapi.TYPE_BOOLEAN,
-                    description='Whether the user is an event organizer',
-                    default=False,
-                    example=False
-                ),
-            }
-        ),
-        responses={
-            201: openapi.Response(
-                description="User successfully registered",
-                examples={
-                    "application/json": {
-                        "id": 1,
-                        "username": "john_doe",
-                        "email": "john@example.com",
-                        "first_name": "John",
-                        "last_name": "Doe",
-                        "is_event_organizer": False,
-                        "message": "User registered successfully"
-                    }
-                }
-            ),
-            400: openapi.Response(
-                description="Bad request",
-                examples={
-                    "application/json": {
-                        "username": [
-                            "A user with that username already exists."
-                        ],
-                        "email": [
-                            "This field must be unique."
-                        ],
-                        "password": [
-                            "Password must be at least 8 characters long.",
-                            "Password must contain at least one uppercase letter.",
-                            "Password must contain at least one number.",
-                            "Password must contain at least one special character."
-                        ],
-                        "password2": [
-                            "Password fields didn't match."
-                        ]
-                    }
-                }
-            )
-        }
-    )
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -447,7 +172,6 @@ class RegisterView(generics.CreateAPIView):
         response_data.pop('password2', None)
         response_data['message'] = 'User registered successfully'
         
-        # Set refresh token in HTTP-only cookie
         response = Response(response_data, status=status.HTTP_201_CREATED)
         response.set_cookie(
             'refresh_token',
@@ -461,64 +185,13 @@ class RegisterView(generics.CreateAPIView):
         return response
 
 class LoginView(generics.GenericAPIView):
-    """
-    Login user with email and password, returns JWT tokens
-    """
     permission_classes = [permissions.AllowAny]
     serializer_class = LoginSerializer
 
-    @swagger_auto_schema(
-        operation_description="""
-        Login with email and password to receive JWT tokens.
-        The access token should be included in the Authorization header for protected endpoints.
-        The refresh token is stored in an HTTP-only cookie.
-        """,
-        request_body=openapi.Schema(
-            type=openapi.TYPE_OBJECT,
-            required=['email', 'password'],
-            properties={
-                'email': openapi.Schema(
-                    type=openapi.TYPE_STRING,
-                    format=openapi.FORMAT_EMAIL,
-                    description='Email address',
-                    example='john@example.com'
-                ),
-                'password': openapi.Schema(
-                    type=openapi.TYPE_STRING,
-                    description='Password',
-                    example='SecurePass123!'
-                )
-            }
-        ),
-        responses={
-            200: openapi.Response(
-                description="Login successful",
-                examples={
-                    "application/json": {
-                        "email": "john@example.com",
-                        "access": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...",
-                        "message": "Login successful"
-                    }
-                }
-            ),
-            400: openapi.Response(
-                description="Bad request",
-                examples={
-                    "application/json": {
-                        "non_field_errors": [
-                            "No account found with this email address.",
-                            "Invalid password."
-                        ]
-                    }
-                }
-            )
-        }
-    )
     def post(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         
-        # Get the validated data
         validated_data = serializer.validated_data
         
         response_data = {
@@ -527,51 +200,30 @@ class LoginView(generics.GenericAPIView):
             'message': 'Login successful'
         }
         
-        # Create the response
         response = Response(response_data)
         
-        # Set the refresh token in an HTTP-only cookie
         response.set_cookie(
             'refresh_token',
             validated_data['refresh'],
             httponly=True,
             secure=True,
             samesite='Lax',
-            max_age=24 * 60 * 60  # 1 day
+            max_age=24 * 60 * 60
         )
         
         return response
 
 class LogoutView(generics.GenericAPIView):
-    """
-    Logout user and blacklist the refresh token
-    """
     permission_classes = [permissions.IsAuthenticated]
 
-    @swagger_auto_schema(
-        operation_description="Logout user and invalidate refresh token",
-        responses={
-            200: openapi.Response(
-                description="Logout successful",
-                examples={
-                    "application/json": {
-                        "message": "Successfully logged out"
-                    }
-                }
-            )
-        }
-    )
     def post(self, request):
         try:
-            # Get the refresh token from cookie
             refresh_token = request.COOKIES.get('refresh_token')
             
             if refresh_token:
-                # Blacklist the refresh token
                 token = RefreshToken(refresh_token)
                 token.blacklist()
             
-            # Create response and delete the refresh token cookie
             response = Response({'message': 'Successfully logged out'})
             response.delete_cookie('refresh_token')
             
@@ -581,21 +233,15 @@ class LogoutView(generics.GenericAPIView):
             return Response({'error': str(e)}, status=400)
 
 class CustomTokenObtainPairView(TokenObtainPairView):
-    """
-    Takes a set of user credentials and returns an access and refresh JSON web
-    token pair to prove the authentication of those credentials.
-    """
     permission_classes = [permissions.AllowAny]
 
     def post(self, request, *args, **kwargs):
         response = super().post(request, *args, **kwargs)
         
         if response.status_code == 200:
-            # Get the tokens from the response
             access_token = response.data.get('access')
             refresh_token = response.data.get('refresh')
             
-            # Set HTTP-only cookie for refresh token
             response.set_cookie(
                 'refresh_token',
                 refresh_token,
@@ -605,7 +251,6 @@ class CustomTokenObtainPairView(TokenObtainPairView):
                 max_age=24 * 60 * 60
             )
             
-            # Return a structured response
             response.data = {
                 'access_token': access_token,
                 'user': {
@@ -620,48 +265,9 @@ class CustomTokenObtainPairView(TokenObtainPairView):
         return response
 
 class UserSearchView(generics.GenericAPIView):
-    """
-    Search for users by email
-    """
     permission_classes = [permissions.IsAuthenticated]
     serializer_class = PublicUserSerializer
 
-    @swagger_auto_schema(
-        operation_description="Search for a user by email",
-        manual_parameters=[
-            openapi.Parameter(
-                'email',
-                openapi.IN_QUERY,
-                description="Email to search for",
-                type=openapi.TYPE_STRING,
-                format=openapi.FORMAT_EMAIL,
-                required=True
-            )
-        ],
-        responses={
-            200: openapi.Response(
-                description="User found",
-                examples={
-                    "application/json": {
-                        "id": 1,
-                        "email": "john@example.com",
-                        "username": "john_doe",
-                        "first_name": "John",
-                        "last_name": "Doe",
-                        "is_event_organizer": False
-                    }
-                }
-            ),
-            404: openapi.Response(
-                description="User not found",
-                examples={
-                    "application/json": {
-                        "detail": "No user found with this email"
-                    }
-                }
-            )
-        }
-    )
     def get(self, request):
         email = request.query_params.get('email')
         if not email:
@@ -680,39 +286,30 @@ class UserSearchView(generics.GenericAPIView):
                 status=status.HTTP_404_NOT_FOUND
             )
 
+class TokenRefreshViewWithCookie(TokenRefreshView):
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request, *args, **kwargs):
+        response = super().post(request, *args, **kwargs)
+        
+        if response.status_code == 200:
+            refresh_token = response.data.get('refresh')
+            
+            response.set_cookie(
+                'refresh_token',
+                refresh_token,
+                httponly=True,
+                secure=True,
+                samesite='Lax',
+                max_age=24 * 60 * 60
+            )
+        
+        return response
+
 class UserDetailByIdView(generics.RetrieveAPIView):
-    """
-    Retrieve user details by ID
-    """
     permission_classes = [permissions.IsAuthenticated]
     serializer_class = PublicUserSerializer
     queryset = User.objects.all()
 
-    @swagger_auto_schema(
-        operation_description="Get user details by ID",
-        responses={
-            200: openapi.Response(
-                description="User details retrieved successfully",
-                examples={
-                    "application/json": {
-                        "id": 1,
-                        "email": "john@example.com",
-                        "username": "john_doe",
-                        "first_name": "John",
-                        "last_name": "Doe",
-                        "is_event_organizer": False
-                    }
-                }
-            ),
-            404: openapi.Response(
-                description="User not found",
-                examples={
-                    "application/json": {
-                        "detail": "Not found."
-                    }
-                }
-            )
-        }
-    )
     def get(self, request, *args, **kwargs):
         return super().get(request, *args, **kwargs)

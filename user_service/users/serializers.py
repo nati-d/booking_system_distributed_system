@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from django.contrib.auth import get_user_model, authenticate
+from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -14,7 +14,7 @@ class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = ('id', 'username', 'email', 'password', 'password2', 
-                 'first_name', 'last_name', 'is_event_organizer')
+                 'first_name', 'last_name')
         extra_kwargs = {
             'first_name': {'required': True},
             'last_name': {'required': True},
@@ -58,8 +58,7 @@ class UserSerializer(serializers.ModelSerializer):
             email=validated_data['email'],
             password=validated_data['password'],  # password will be hashed by create_user
             first_name=validated_data.get('first_name', ''),
-            last_name=validated_data.get('last_name', ''),
-            is_event_organizer=validated_data.get('is_event_organizer', False)
+            last_name=validated_data.get('last_name', '')
         )
         return user
 
@@ -86,7 +85,7 @@ class PublicUserSerializer(serializers.ModelSerializer):
     """
     class Meta:
         model = User
-        fields = ['id', 'email', 'username', 'first_name', 'last_name', 'is_event_organizer']
+        fields = ['id', 'email', 'username', 'first_name', 'last_name']
         read_only_fields = fields  # All fields are read-only
 
 class UserProfileSerializer(serializers.ModelSerializer):
@@ -101,7 +100,7 @@ class UserProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = ['id', 'email', 'username', 'first_name', 'last_name', 
-                 'is_event_organizer', 'current_password', 'new_password', 
+                 'current_password', 'new_password', 
                  'confirm_new_password']
         read_only_fields = ['id', 'email']
 
@@ -136,7 +135,7 @@ class UserProfileSerializer(serializers.ModelSerializer):
 
     def update(self, instance, validated_data):
         # Remove password fields from validated_data
-        current_password = validated_data.pop('current_password', None)
+        validated_data.pop('current_password', None)
         new_password = validated_data.pop('new_password', None)
         validated_data.pop('confirm_new_password', None)
 

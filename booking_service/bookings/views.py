@@ -6,6 +6,52 @@ from .serializers import EventSerializer, BookingSerializer, PaymentSerializer
 from django.db.models import F
 from rest_framework.exceptions import AuthenticationFailed
 from .permissions import IsAuthenticatedWithToken  # Import the custom permission class
+import pika
+import json
+import os
+
+RABBITMQ_HOST = os.getenv("RABBITMQ_HOST", "localhost")
+RABBITMQ_PORT = int(os.getenv("RABBITMQ_PORT", 5672))
+RABBITMQ_USER = os.getenv("RABBITMQ_USER", "guest")
+RABBITMQ_PASSWORD = os.getenv("RABBITMQ_PASSWORD", "guest")
+
+def book_event(user_id, event_id, date):    
+    """
+    Simulate booking an event and sending a notification. 
+    """
+    try:
+        credentials = pika.PlainCredentials(RABBITMQ_USER, RABBITMQ_PASSWORD)
+        connection = pika.BlockingConnection(pika.ConnectionParameters(
+            host=RABBITMQ_HOST,
+            port=RABBITMQ_PORT,
+            credentials=credentials
+        ))
+        channel = connection.channel()
+
+        # Declare the queue
+        channel.queue_declare(queue='booking_notifications')
+
+        # Create the message
+        message = {
+            "user_id": user_id,
+            "event_id": event_id,
+            "date": date.isoformat()  # Convert date to ISO format string
+        }
+
+        # Publish the message
+        channel.basic_publish(
+            exchange='',
+            routing_key='booking_notifications',
+            body=json.dumps(message)
+        )
+
+        print(f"[x] Sent booking notification: {message}")
+
+        # Close the connection
+        connection.close()
+    except pika.exceptions.AMQPConnectionError as e:
+        print(f"Failed to connect to RabbitMQ: {e}")
+        raise
 
 class EventListView(generics.ListAPIView):
     queryset = Event.objects.filter(available_tickets__gt=0).order_by('date')
@@ -27,12 +73,13 @@ class BookingCreateView(generics.CreateAPIView):
     serializer_class = BookingSerializer
     permission_classes = [IsAuthenticatedWithToken]
 
-    def perform_create(self, serializer): 
+    def perform_create(self, serializer):  
         # Extract token from the Authorization header
         token = self.request.headers.get("Authorization").split(" ")[1]
+        
         is_valid, user_data = self.validate_jwt_token(token)
-
-        if not is_valid :
+        print(is_valid, user_data)
+        if not is_valid:
             raise AuthenticationFailed("Authentication failed.")
 
         # Extract user ID from the validated token
@@ -40,6 +87,8 @@ class BookingCreateView(generics.CreateAPIView):
 
         event = serializer.validated_data['event']
         tickets_booked = serializer.validated_data['tickets_booked']
+
+        book_event(user_id=user_id, event_id=event.id, date=event.date)
 
         # Check ticket availability
         if event.available_tickets < tickets_booked:
@@ -53,11 +102,8 @@ class BookingCreateView(generics.CreateAPIView):
         serializer.save(user_id=user_id)
 
     def validate_jwt_token(self, token): 
-        user_service_url = "http://127.0.0.1:8000"
+        user_service_url = "http://127.0.0.1:8001/validate_token/"
         response = requests.post(user_service_url, json={"token": token})
-        x = {}
-        x['id'] = 1
-        return True,x
         if response.status_code == 200:
             data = response.json()
             if data.get("valid"):
@@ -76,22 +122,17 @@ class BookingListView(generics.ListAPIView):
         token = self.request.headers.get("Authorization").split(" ")[1]
         is_valid, user_data = self.validate_jwt_token(token)
 
-        if not is_valid :
+        if not is_valid:
             raise AuthenticationFailed("Authentication failed.")
 
         # Extract user ID from the validated token
-        # user_id = user_data.get("id")
-        # if not user_id :
-        #     user_id = 1 
+        user_id = user_data.get("id")
 
-        return Booking.objects.filter(user_id=1)
+        return Booking.objects.filter(user_id=user_id)
 
     def validate_jwt_token(self, token):
-        return True,None
-
-        user_service_url = "http://127.0.0.1:8000"
+        user_service_url = "http://127.0.0.1:8001/validate_token/"
         response = requests.post(user_service_url, json={"token": token})
-
         if response.status_code == 200:
             data = response.json()
             if data.get("valid"):
@@ -100,7 +141,6 @@ class BookingListView(generics.ListAPIView):
                 return False, None
         else:
             return False, None
-
 
 class PaymentView(generics.CreateAPIView):
     queryset = Payment.objects.all()
@@ -128,10 +168,8 @@ class PaymentView(generics.CreateAPIView):
         serializer.save()
 
     def validate_jwt_token(self, token):
-        return True,None
-        user_service_url = "http://127.0.0.1:8000"
+        user_service_url = "http://127.0.0.1:8001/validate_token/"
         response = requests.post(user_service_url, json={"token": token})
-
         if response.status_code == 200:
             data = response.json()
             if data.get("valid"):

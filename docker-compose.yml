@@ -1,12 +1,12 @@
-version: '3.8'
+version: '3.9'
 
 services:
   user_service:
     build:
       context: ./user_service
-    container_name: booking_system_user_service  # Assign a specific name to the container
+    container_name: booking_system_user_service
     ports:
-      - "8000:8000"
+      - "8001:8001"
     volumes:
       - ./user_service:/app
     environment:
@@ -18,9 +18,11 @@ services:
       - DB_PASSWORD=${DB_PASSWORD}
       - DB_HOST=${DB_HOST}
       - DB_PORT=${DB_PORT}
-    command: ["python", "manage.py", "runserver", "0.0.0.0:8000"]
+      - RABBITMQ_HOST=rabbitmq
+    command: ["python", "manage.py", "runserver", "0.0.0.0:8001"]
     depends_on:
       - db
+      - rabbitmq
 
   db:
     image: postgres:15
@@ -34,5 +36,27 @@ services:
     ports:
       - "5432:5432"
 
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+
+  booking_service:
+    build:
+      context: ./booking_service
+    container_name: booking_service
+    ports:
+      - "8000:8000" # Expose container port 8000 to host port 8000
+    depends_on:
+      - rabbitmq
+    environment:
+      RABBITMQ_HOST: rabbitmq
+
 volumes:
   postgres_data:
+

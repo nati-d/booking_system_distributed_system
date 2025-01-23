@@ -12,6 +12,20 @@ class User(AbstractUser):
     is_event_organizer = models.BooleanField(default=False)
     password_reset_token = models.CharField(max_length=100, null=True, blank=True)
     password_reset_expires = models.DateTimeField(null=True, blank=True)
+    groups = models.ManyToManyField(
+        'auth.Group',
+        related_name='custom_user_set',
+        blank=True,
+        help_text='The groups this user belongs to.',
+        verbose_name='groups',
+    )
+    user_permissions = models.ManyToManyField(
+        'auth.Permission',
+        related_name='custom_user_set',
+        blank=True,
+        help_text='Specific permissions for this user.',
+        verbose_name='user permissions',
+    )
     
     # Make email the username field
     USERNAME_FIELD = 'email'
