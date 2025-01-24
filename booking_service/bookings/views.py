@@ -124,7 +124,11 @@ class BookingCreateView(generics.CreateAPIView):
             raise AuthenticationFailed("Authentication failed.")
 
         # Extract user ID from the validated token
-        user_id = user_data.get("id")  # Ensure the response contains "id"
+        data = self.request.data
+        user_id = data.get("user_id")
+
+        if not user_id:
+            raise AuthenticationFailed("User ID is required.")
 
         event = serializer.validated_data['event']
         tickets_booked = serializer.validated_data['tickets_booked']
@@ -167,8 +171,12 @@ class BookingListView(generics.ListAPIView):
         if not is_valid:
             raise AuthenticationFailed("Authentication failed.")
 
-        # Extract user ID from the validated token
-        user_id = user_data.get("id")
+        # Extract user ID from the request parameters
+        data = self.request.data
+        user_id = data.get('user_id')
+
+        if not user_id:
+            raise AuthenticationFailed("User ID is required.")
 
         return Booking.objects.filter(user_id=user_id)
 

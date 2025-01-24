@@ -16,7 +16,7 @@ def delete_user_consumer():
 
     credentials = pika.PlainCredentials(RABBITMQ_USER, RABBITMQ_PASSWORD)
 
-    # Retry mechanism for RabbitMQ connection
+    # Retry mechanism for RabbitMQ connection 
     max_retries = 5
     for attempt in range(max_retries):
         try:
@@ -44,20 +44,20 @@ def delete_user_consumer():
         user_id = message.get('user_id')
         if user_id:
             try:
-                response = requests.post('http://booking_service:8000/delete_user_events/', json={'user_id': user_id})
+                response = requests.post('http://localhost:8000/delete_user_events/', json={'user_id': user_id})
                 if response.status_code == 200:
                     print(f"Successfully deleted events for user_id {user_id}.")
                 else:
                     print(f"Failed to delete events for user_id {user_id}. Status code: {response.status_code}")
             except requests.exceptions.RequestException as e:
                 print(f"HTTP request failed: {e}")
-    channel.basic_consume(queue='delete_user', on_message_callback=callback, auto_ack=True)
-
-    print(' [*] Waiting for messages. To exit press CTRL+C')
+    channel.basic_consume(queue='delete_user', on_message_callback=callback, auto_ack=True) 
+ 
+    print(' [*] Waiting for messages. To exit press CTRL+C') 
     try:
         channel.start_consuming()
     except KeyboardInterrupt:
-        print("Consumer interrupted, closing connections.")
+        print("Consumer interrupted, closing cxonnections.")
     finally:
         # Close RabbitMQ connection gracefully
         connection.close()
