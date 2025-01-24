@@ -20,16 +20,18 @@ RABBITMQ_PORT = int(os.getenv("RABBITMQ_PORT", 5672))
 RABBITMQ_USER = os.getenv("RABBITMQ_USER", "guest")
 RABBITMQ_PASSWORD = os.getenv("RABBITMQ_PASSWORD", "guest")
 from django.views.decorators.csrf import csrf_exempt
+ 
 
+@method_decorator(csrf_exempt, name='dispatch')
 
 class DeleteUserEventsView(View): 
-    def DELETE(self, request):
+    def post(self, request):
         # Extract token from the Authorization header
-        token = request.headers.get("Authorization").split(" ")[1]
-        is_valid, user_data = self.validate_jwt_token(token) 
+        # token = request.headers.get("Authorization").split(" ")[1]
+        # is_valid, user_data = self.validate_jwt_token(token) 
 
-        if not is_valid:
-            return JsonResponse({'error': 'Authentication failed'}, status=403)
+        # if not is_valid:
+        #     return JsonResponse({'error': 'Authentication failed'}, status=403)
 
         data = json.loads(request.body)
         user_id = data.get('user_id')
@@ -42,7 +44,7 @@ class DeleteUserEventsView(View):
             Booking.objects.filter(user_id=user_id).delete()
             return JsonResponse({'message': f'All events for user {user_id} have been deleted'}, status=200)
         except Exception as e:
-            return JsonResponse({'error': str(e)}, status=500)
+            return JsonResponse({'error': str(e)}, status=500) 
 
     def validate_jwt_token(self, token):
         return True, None
